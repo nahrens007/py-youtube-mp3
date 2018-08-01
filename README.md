@@ -9,7 +9,8 @@ I installed it by running the command:
 If you're running Linux, then you will need to install ffmpeg. I installed it by running: 
 `sudo apt-get install ffmpeg`
 ### Windows
-
+Same as with Linux, you need to install ffmpeg. You can download it here: https://www.ffmpeg.org/
+## Running
 Finally, running: 
 `python3 youtube-mp3.py`
 will beging the process of downloading and processesing the youtube videos listed in links.txt.
