@@ -10,6 +10,7 @@ If you're running Linux, then you will need to install ffmpeg. I installed it by
 `sudo apt-get install ffmpeg`
 ### Windows
 Same as with Linux, you need to install ffmpeg. You can download it here: https://www.ffmpeg.org/
+I downloaded the static-linked zip file, put it in C:\Program Files\ffmpeg, and added the path C:\Program Files\ffmpeg\bin to my PATH environment variable (ffmpeg.exe, ffplay.exe, and ffprobe.exe are in the bin folder). If you don't know how to add items to the PATH environment variable, you can Google it. Keep in mind you may need to sign out and sign back in for the environment variable to take effect. 
 ## Running
 Finally, running: 
 `python3 youtube-mp3.py`
