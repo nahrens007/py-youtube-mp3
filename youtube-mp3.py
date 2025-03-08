@@ -1,38 +1,104 @@
 from __future__ import unicode_literals
-import youtube_dl
+from yt_dlp import YoutubeDL
 import json
 import os
-from datetime import datetime
+import logging, logging.config
+import requests
 
+
+BASE_URL = os.environ.get("BASE_URL")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+LOG_DIR = os.path.join(BASE_DIR, "logs")
 
-if not os.path.isdir(os.path.join(BASE_DIR,'logs')):
+if not os.path.isdir(LOG_DIR):
     # create logs/ dir
-    os.mkdir(os.path.join(BASE_DIR,'logs'))
-    
-with open(os.path.join(BASE_DIR,'links.txt'), 'r') as file:
-    songs = json.loads(file.read())
-    now = datetime.now()
-    current_time = now.strftime("%Y%m%d%H%M%S")
-    log=open(os.path.join(BASE_DIR,'logs','yt_dl_'+current_time+'.log'),'w')
-    log.write(json.dumps(songs,sort_keys=True, indent=4, separators=(',',': ')))
-    log.close()
-    for song in songs:
-        ydl_opts = {
-        'format': 'bestaudio/best',
-        'outtmpl': song['title'] + '.%(ext)s',
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-            'preferredquality': '192',
-        }],
-        'postprocessor_args': ['-metadata', 'artist='+song['artist'], '-metadata', 'title=' + song['title'], '-metadata', 'album=' + song['album']],
+    os.mkdir(LOG_DIR)
+
+
+def setup_logging():
+    logging.config.dictConfig(
+        {
+            "version": 1,
+            "formatters": {"default": {"format": "[%(levelname)s|%(name)s|%(module)s|L%(lineno)d] %(asctime)s: %(message)s", "datefmt": "%Y-%m-%dT%H:%M:%S%z"}},
+            "handlers": {
+                "file": {
+                    "class": "logging.handlers.TimedRotatingFileHandler",
+                    "filename": os.path.join(LOG_DIR, "yt_dl.log"),
+                    "formatter": "default",
+                    "when": "midnight",
+                    "interval": 1,
+                    "backupCount": 30,
+                },
+                "console": {
+                    "class": "logging.StreamHandler",
+                    "formatter": "default",
+                },
+            },
+            "root": {"level": "INFO", "handlers": ["file", "console"]},
         }
-        with youtube_dl.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([song['url']])
+    )
 
 
-f = open(os.path.join(BASE_DIR,'links.txt'), 'w')
-#file format: [{"url":"YoutubeLink","artist":"SongArtist","title":"SongTitle","album":"SongAlbum"}]
-f.write('')
-f.close()
+setup_logging()
+logging.basicConfig(level=logging.DEBUG)
+
+logger = logging.getLogger()
+
+logger.info("Starting program")
+
+logger.info(f"{BASE_URL=}")
+logger.info(f"{BASE_DIR=}")
+
+
+def debug_log(func):
+    def wrapper(*args, **kwargs):
+        logger.debug(f"Entering function: {func.__name__}")
+        result = func(*args, **kwargs)
+        logger.debug(f"Exiting function: {func.__name__}")
+        return result
+
+    return wrapper
+
+
+@debug_log
+def get_music(base_url):
+    get_url = f"{base_url}/music"
+    logger.info(f"Getting music list from: {get_url=}")
+
+    # Get music from get_url
+    response = requests.get(get_url)
+    logger.info(f"{response.status_code=}")
+
+    json_data = response.json()
+    music_list = json_data.get("music")
+    logger.info(f"Retrieved music list with: {len(music_list)=}")
+    return music_list
+
+
+@debug_log
+def download_music(music_list):
+    
+    for song in music_list:
+        logger.info(f"Downloading: {song['url']}")
+        ydl_opts = {
+            "format": "mp3/bestaudio/best",
+            "outtmpl": song["title"] + ".%(ext)s",
+            "noplaylist": True,
+            "postprocessors": [
+                {
+                    "key": "FFmpegExtractAudio",
+                    "preferredcodec": "mp3",
+                    "preferredquality": "192",
+                }
+            ],
+            "postprocessor_args": ["-metadata", "artist=" + song["artist"], "-metadata", "title=" + song["title"], "-metadata", "album=" + song["album"]],
+        }
+        with YoutubeDL(ydl_opts) as ydl:
+            logger.debug(f"Downloading: {song['title']}")
+            status_code = ydl.download([song["url"]])
+            logger.info(f"{status_code=}")
+
+
+if __name__ == "__main__":
+    music_list = get_music(BASE_URL)
+    download_music(music_list)
