@@ -1,0 +1,10 @@
+lint.select = ["Q"]
+line-length = 200
+
+[format]
+quote-style = "double"
+
+[lint.flake8-quotes]
+docstring-quotes = "double"
+inline-quotes = "double"
+multiline-quotes = "double"
