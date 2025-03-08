@@ -1,6 +1,5 @@
 from __future__ import unicode_literals
 from yt_dlp import YoutubeDL
-import json
 import os
 import logging, logging.config
 import requests
@@ -9,10 +8,14 @@ import requests
 BASE_URL = os.environ.get("BASE_URL")
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 LOG_DIR = os.path.join(BASE_DIR, "logs")
+SAVE_DIR = os.path.join(BASE_DIR, "downloads")
 
 if not os.path.isdir(LOG_DIR):
     # create logs/ dir
     os.mkdir(LOG_DIR)
+if not os.path.isdir(SAVE_DIR):
+    # create logs/ dir
+    os.mkdir(SAVE_DIR)
 
 
 def setup_logging():
@@ -82,6 +85,7 @@ def download_music(music_list):
         logger.info(f"Downloading: {song['url']}")
         ydl_opts = {
             "format": "mp3/bestaudio/best",
+            "paths": {"home": SAVE_DIR}, 
             "outtmpl": song["title"] + ".%(ext)s",
             "noplaylist": True,
             "postprocessors": [
