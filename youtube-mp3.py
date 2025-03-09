@@ -1,56 +1,46 @@
 from __future__ import unicode_literals
 from yt_dlp import YoutubeDL
 import os
-import logging, logging.config
 import requests
+from dataclasses import dataclass, fields
+from mylogger import setup_logging
+import logging
+import datetime
+import json
+
+log_dir = os.environ.get("LOG_DIR", "logs")
+if not os.path.isdir(log_dir):
+    os.makedirs(log_dir, exist_ok=True)
+    
+# Set up logging at module level
+setup_logging(os.path.join(log_dir, "yt_dl.log"))
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.DEBUG)
 
 
-BASE_URL = os.environ.get("BASE_URL")
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-LOG_DIR = os.path.join(BASE_DIR, "logs")
-SAVE_DIR = os.path.join(BASE_DIR, "downloads")
+@dataclass
+class Paths:
+    BASE_URL: str
+    MUSIC_DIR: str
+    HISTORY_DIR: str
 
-if not os.path.isdir(LOG_DIR):
-    # create logs/ dir
-    os.mkdir(LOG_DIR)
-if not os.path.isdir(SAVE_DIR):
-    # create logs/ dir
-    os.mkdir(SAVE_DIR)
+    @classmethod
+    def from_env(cls) -> "Paths":
+        # Get all field names from the dataclass
+        env_values = {field.name: os.environ.get(field.name) for field in fields(cls)}
+        return cls(**env_values)
 
+    def validate(self) -> bool:
+        """Validate that all required paths are set"""
+        return all(getattr(self, field.name) for field in fields(self))
 
-def setup_logging():
-    logging.config.dictConfig(
-        {
-            "version": 1,
-            "formatters": {"default": {"format": "[%(levelname)s|%(name)s|%(module)s|L%(lineno)d] %(asctime)s: %(message)s", "datefmt": "%Y-%m-%dT%H:%M:%S%z"}},
-            "handlers": {
-                "file": {
-                    "class": "logging.handlers.TimedRotatingFileHandler",
-                    "filename": os.path.join(LOG_DIR, "yt_dl.log"),
-                    "formatter": "default",
-                    "when": "midnight",
-                    "interval": 1,
-                    "backupCount": 30,
-                },
-                "console": {
-                    "class": "logging.StreamHandler",
-                    "formatter": "default",
-                },
-            },
-            "root": {"level": "INFO", "handlers": ["file", "console"]},
-        }
-    )
-
-
-setup_logging()
-logging.basicConfig(level=logging.DEBUG)
-
-logger = logging.getLogger()
-
-logger.info("Starting program")
-
-logger.info(f"{BASE_URL=}")
-logger.info(f"{BASE_DIR=}")
+    def ensure_directories(self) -> None:
+        """Create directories if they don't exist"""
+        dir_fields = [field.name for field in fields(Paths) if "dir" in field.name.lower()]
+        for dir_name in dir_fields:
+            path = getattr(self, dir_name)
+            if path and not os.path.isdir(path):
+                os.makedirs(path, exist_ok=True)
 
 
 def debug_log(func):
@@ -64,7 +54,7 @@ def debug_log(func):
 
 
 @debug_log
-def get_music(base_url):
+def get_music_list(base_url):
     get_url = f"{base_url}/music"
     logger.info(f"Getting music list from: {get_url=}")
 
@@ -79,13 +69,28 @@ def get_music(base_url):
 
 
 @debug_log
-def download_music(music_list):
-    
+def delete_music(base_url, music_id_list):
+    del_url = f"{base_url}/music"
+    logger.info(f"Deleting music from: {del_url=}")
+    logger.debug(f"{music_id_list=}")
+    try:
+        response = requests.delete(del_url, json={"delete_list": music_id_list})
+        logger.info(f"{response.status_code=}")
+        logger.info(f"{response.text=}")
+        return response.status_code
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Error deleting music", exc_info=True)
+        return None
+
+
+@debug_log
+def download_music(music_list, save_dir):
+    success_id_list, fail_id_list = [], []
     for song in music_list:
-        logger.info(f"Downloading: {song['url']}")
+        logger.info(f"Downloading: {song['title']}")
         ydl_opts = {
             "format": "mp3/bestaudio/best",
-            "paths": {"home": SAVE_DIR}, 
+            "paths": {"home": save_dir},
             "outtmpl": song["title"] + ".%(ext)s",
             "noplaylist": True,
             "postprocessors": [
@@ -97,12 +102,44 @@ def download_music(music_list):
             ],
             "postprocessor_args": ["-metadata", "artist=" + song["artist"], "-metadata", "title=" + song["title"], "-metadata", "album=" + song["album"]],
         }
-        with YoutubeDL(ydl_opts) as ydl:
-            logger.debug(f"Downloading: {song['title']}")
-            status_code = ydl.download([song["url"]])
+        try:
+            with YoutubeDL(ydl_opts) as ydl:
+                logger.debug(f"Downloading: {song['url']}")
+                status_code = ydl.download([song["url"]])
+        except Exception as e:
+            logger.error(f"Error downloading {song['title']}", exc_info=True)
+            fail_id_list.append(song["rowid"])
+        finally:
             logger.info(f"{status_code=}")
+            if status_code == 0:
+                success_id_list.append(song["rowid"])
+            else:
+                fail_id_list.append(song["rowid"])
+    return success_id_list, fail_id_list
+
+
+def main():
+    paths = Paths.from_env()
+    if not paths.validate():
+        logger.error("Missing required environment variables")
+        exit(1)
+    paths.ensure_directories()
+
+    music_list = get_music_list(paths.BASE_URL)
+
+    # Write music_list to history_dir with timestamp filename following ISO standards
+    timestamp_str = datetime.datetime.now().strftime("%Y-%m-%dT%H:%M:%S%z")
+    history_file = os.path.join(paths.HISTORY_DIR, f"{timestamp_str}.json")
+    with open(history_file, "w") as f:
+        f.write(json.dumps({"music": music_list}, indent=4))
+
+    success_id_list, fail_id_list = download_music(music_list, paths.MUSIC_DIR)
+    logger.info(f"Downloaded: {len(success_id_list)=}")
+    logger.info(f"Failed: {len(fail_id_list)=}")
+
+    # Delete successful downloads
+    delete_music(paths.BASE_URL, success_id_list)
 
 
 if __name__ == "__main__":
-    music_list = get_music(BASE_URL)
-    download_music(music_list)
+    main()
