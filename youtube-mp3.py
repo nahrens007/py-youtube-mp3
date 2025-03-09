@@ -8,8 +8,12 @@ import logging
 import datetime
 import json
 
+log_dir = os.environ.get("LOG_DIR", "logs")
+if not os.path.isdir(log_dir):
+    os.makedirs(log_dir, exist_ok=True)
+    
 # Set up logging at module level
-setup_logging(os.path.join(os.environ.get("LOG_DIR", "."), "yt_dl.log"))
+setup_logging(os.path.join(log_dir, "yt_dl.log"))
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.DEBUG)
 
@@ -72,6 +76,7 @@ def delete_music(base_url, music_id_list):
     try:
         response = requests.delete(del_url, json={"delete_list": music_id_list})
         logger.info(f"{response.status_code=}")
+        logger.info(f"{response.text=}")
         return response.status_code
     except requests.exceptions.RequestException as e:
         logger.error(f"Error deleting music", exc_info=True)
@@ -103,13 +108,13 @@ def download_music(music_list, save_dir):
                 status_code = ydl.download([song["url"]])
         except Exception as e:
             logger.error(f"Error downloading {song['title']}", exc_info=True)
-            fail_id_list.append(song["id"])
+            fail_id_list.append(song["rowid"])
         finally:
             logger.info(f"{status_code=}")
             if status_code == 0:
-                success_id_list.append(song["id"])
+                success_id_list.append(song["rowid"])
             else:
-                fail_id_list.append(song["id"])
+                fail_id_list.append(song["rowid"])
     return success_id_list, fail_id_list
 
 
@@ -132,7 +137,8 @@ def main():
     logger.info(f"Downloaded: {len(success_id_list)=}")
     logger.info(f"Failed: {len(fail_id_list)=}")
 
-    delete_music(paths.BASE_URL, fail_id_list)
+    # Delete successful downloads
+    delete_music(paths.BASE_URL, success_id_list)
 
 
 if __name__ == "__main__":
