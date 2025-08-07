@@ -45,9 +45,9 @@ class Paths:
 
 def debug_log(func):
     def wrapper(*args, **kwargs):
-        logger.debug(f"Entering function: {func.__name__}")
+        logger.debug(f"START: {func.__name__}")
         result = func(*args, **kwargs)
-        logger.debug(f"Exiting function: {func.__name__}")
+        logger.debug(f"EXIT: {func.__name__}")
         return result
 
     return wrapper
@@ -70,17 +70,18 @@ def get_music_list(base_url):
 
 @debug_log
 def delete_music(base_url, music_id_list):
-    del_url = f"{base_url}/music"
-    logger.info(f"Deleting music from: {del_url=}")
-    logger.debug(f"{music_id_list=}")
-    try:
-        response = requests.delete(del_url, json={"delete_list": music_id_list})
-        logger.info(f"{response.status_code=}")
-        logger.info(f"{response.text=}")
-        return response.status_code
-    except requests.exceptions.RequestException as e:
-        logger.error(f"Error deleting music", exc_info=True)
-        return None
+    if music_id_list: 
+        del_url = f"{base_url}/music"
+        logger.info(f"Deleting music from: {del_url=}")
+        logger.debug(f"{music_id_list=}")
+        try:
+            response = requests.delete(del_url, json={"delete_list": music_id_list})
+            logger.info(f"{response.status_code=}")
+            logger.info(f"{response.text=}")
+            return response.status_code
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error deleting music", exc_info=True)
+            return None
 
 
 @debug_log
